@@ -10,7 +10,6 @@ from .perlin import generate_fractal_noise
 class SimulatorOptions:
     SR: float = 44100.0  # Sample rate (Hz)
     L: float = 17.0  # Vocal tract length (cm)
-    f0: float = 120.0  # Fundamental frequency (Hz)
     TF: float = 1.0  # Simulation duration (s)
     N: int = 32  # Number of tube sections
 
@@ -30,7 +29,6 @@ class SimulatorOptions:
     fft_size: int = 512  # FFT size for synthesis (samples)
     hop_ratio: float = 4.0  # Hop size ratio
     a_win_alpha: float = 0.25  # Tukey window shape parameter
-
 
 
 class TransmissionLineSimulator:
@@ -240,4 +238,3 @@ class TransmissionLineSimulator:
         pout = pout.at[indices].add(pout_frames)
 
         return pout
-
