@@ -9,7 +9,6 @@ from .perlin import generate_fractal_noise
 @dataclass
 class SimulatorOptions:
     SR: float = 44100.0  # Sample rate (Hz)
-    L: float = 17.0  # Vocal tract length (cm)
     TF: float = 1.0  # Simulation duration (s)
     N: int = 32  # Number of tube sections
 

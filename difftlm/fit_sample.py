@@ -52,7 +52,7 @@ def field_to_cross_section(x, scale=0.35, bias=0.1):
 
 def fit_utterance(
     tgt, uin, sim, model, n_steps=250, area_scale=0.35, spectrogram=None,
-    area_bias=0.1,
+    area_bias=0.1, L=17.5,
 ):
     """Fit model in place; pass a cached spectrogram when using ConvEncoder.
 
@@ -92,7 +92,7 @@ def fit_utterance(
     target_features = jax.jit(mel_loss.features)(tgt)
 
     def objective(model, key, target_features):
-        pout = sim.rollout(uin, areas(model), L=sim.opt.L, key=key)
+        pout = sim.rollout(uin, areas(model), L=L, key=key)
         return mel_loss.compare(mel_loss.features(pout), target_features)
 
     @nnx.jit
@@ -113,7 +113,7 @@ def fit_utterance(
             progress.set_postfix(loss=f"{float(loss):.4f}")
 
     A = areas(model)
-    pout = sim.rollout(uin, A, L=sim.opt.L, key=jax.random.key(0))
+    pout = sim.rollout(uin, A, L=L, key=jax.random.key(0))
     return pout, A, jnp.stack(history)
 
 
@@ -140,11 +140,12 @@ def main(
     area_bias sets the zero-field softplus input; 1 matches the reference.
     """
     sr = 32000
+    L = 17.5
     tgt, _ = librosa.load(path, sr=sr, mono=True, duration=duration)
     tgt = tgt - tgt.mean()
     tgt = tgt / (np.max(np.abs(tgt)) + 1e-8)
     sim = TransmissionLineSimulator(
-        SimulatorOptions(SR=sr, TF=len(tgt) / sr, L=17.5, fft_size=1024)
+        SimulatorOptions(SR=sr, TF=len(tgt) / sr, fft_size=1024)
     )
     tgt = tgt[: sim.NF]
 
@@ -153,7 +154,8 @@ def main(
         flush=True,
     )
     start = perf_counter()
-    pitch = SwiftF0().detect(tgt, sr, fmin=65, fmax=500)
+    # Avoid ONNX Runtime pinning workers to CPUs outside the allocated set.
+    pitch = SwiftF0(threads=1).detect(tgt, sr, fmin=65, fmax=500)
     print(f"Pitch estimated in {perf_counter() - start:.2f}s.", flush=True)
     f0 = pitch.pitch_hz
     rms = librosa.feature.rms(y=tgt, frame_length=2048, hop_length=320)[0]
@@ -218,6 +220,7 @@ def main(
             spectrogram=spectrogram,
             area_bias=area_bias,
             area_scale=area_scale,
+            L=L,
         )
 
         run_output.mkdir(parents=True, exist_ok=True)
@@ -257,7 +260,7 @@ def main(
             audio_path=run_output / "fitted.wav",
             target_audio=tgt,
             reconstructed_audio=pout,
-            length_cm=sim.opt.L,
+            length_cm=L,
             hop_seconds=sim.hop_length / sim.SR,
             window_seconds=sim.frame_length / sim.SR,
         )

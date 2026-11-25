@@ -1,1 +1,1 @@
-"""JAX implementation of diffTLM's differentiable vocal tract models."""
+"""Differentiable vocal tract models, with JAX and PyTorch implementations."""
