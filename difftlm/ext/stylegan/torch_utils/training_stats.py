@@ -14,7 +14,7 @@ code."""
 import re
 import numpy as np
 import torch
-from difftlm.torch._stylegan import dnnlib
+from difftlm.ext.stylegan import dnnlib
 
 from . import misc
 

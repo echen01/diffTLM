@@ -1,6 +1,6 @@
 """Fit the Jude recording. Run from the repository directory:
 
-    uv run python -m difftlm.fit_sample
+    uv run python -m difftlm.jax.fit_sample
 
 Use --network rff for Fourier features or --network multiscale-grid for directly
 learned multiresolution grids instead of the convolutional encoder. Use --network
@@ -12,6 +12,7 @@ RFF uses tanh hidden layers and separate time/position Fourier bandwidths;
 representation.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 import json
 from time import perf_counter
@@ -33,7 +34,34 @@ from .encoder import ConvEncoder
 from .fields import FourierNet, MultiResolutionGrid, RFFMLP, Grid
 from .glottis import lf_pulse
 from .loss import MultiResolutionSTFTLoss
-from .viz import save_tract_visualizations
+from ..viz import save_tract_visualizations
+
+
+@dataclass
+class ReconstructOptions:
+    """Fit an audio file; optionally use just its first `duration` seconds."""
+
+    path: Path = Path(__file__).resolve().parents[2] / "assets/jude.wav"
+    """Input audio file."""
+    n_steps: int = 500
+    duration: float | None = None
+    """Optionally use only the first `duration` seconds."""
+    output: Path = Path(__file__).resolve().parents[2] / "outputs/jude_fit"
+    """Output directory."""
+    SR: int = 32000
+    """Sample rate (Hz)."""
+    L: float = 17.5
+    """Vocal tract length (cm)."""
+    network: Literal["cnn", "rff", "grid", "multiscale-grid", "mfn", "all"] = "cnn"
+    area_scale: float = 0.35
+    """Field amplitude for every representation."""
+    area_bias: float = 0.1
+    """Zero-field softplus input; 1 matches the reference."""
+    rff_scale: tuple[float, float] = (10.0, 2.0)
+    """Fourier bandwidths in (time, tract position), independently."""
+    rff_encoding_dim: int = 256
+    rff_hidden_dim: int = 512
+    rff_activation: Literal["leaky_relu", "tanh"] = "tanh"
 
 
 def field_to_cross_section(x, scale=0.35, bias=0.1):
@@ -117,45 +145,23 @@ def fit_utterance(
     return pout, A, jnp.stack(history)
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def main(
-    path: Path = ROOT / "assets/jude.wav",
-    n_steps: int = 500,
-    duration: float | None = None,
-    output: Path = ROOT / "outputs/jude_fit",
-    network: Literal["cnn", "rff", "grid", "multiscale-grid", "mfn", "all"] = "cnn",
-    area_scale: float = 0.35,
-    area_bias: float = 0.1,
-    rff_scale: tuple[float, float] = (10.0, 2.0),
-    rff_encoding_dim: int = 256,
-    rff_hidden_dim: int = 512,
-    rff_activation: Literal["leaky_relu", "tanh"] = "tanh",
-):
-    """Fit an audio file; optionally use just its first `duration` seconds.
-
-    rff_scale sets Fourier bandwidths in (time, tract position), independently.
-    area_scale controls field amplitude for every representation.
-    area_bias sets the zero-field softplus input; 1 matches the reference.
-    """
-    sr = 32000
-    L = 17.5
-    tgt, _ = librosa.load(path, sr=sr, mono=True, duration=duration)
+def main(opt: ReconstructOptions | None = None):
+    opt = ReconstructOptions() if opt is None else opt
+    tgt, _ = librosa.load(opt.path, sr=opt.SR, mono=True, duration=opt.duration)
     tgt = tgt - tgt.mean()
     tgt = tgt / (np.max(np.abs(tgt)) + 1e-8)
     sim = TransmissionLineSimulator(
-        SimulatorOptions(SR=sr, TF=len(tgt) / sr, fft_size=1024)
+        SimulatorOptions(SR=opt.SR, TF=len(tgt) / opt.SR, fft_size=1024)
     )
     tgt = tgt[: sim.NF]
 
     print(
-        f"Estimating pitch with SwiftF0 (audio duration: {len(tgt) / sr:.2f}s)...",
+        f"Estimating pitch with SwiftF0 (audio duration: {len(tgt) / opt.SR:.2f}s)...",
         flush=True,
     )
     start = perf_counter()
     # Avoid ONNX Runtime pinning workers to CPUs outside the allocated set.
-    pitch = SwiftF0(threads=1).detect(tgt, sr, fmin=65, fmax=500)
+    pitch = SwiftF0(threads=1).detect(tgt, opt.SR, fmin=65, fmax=500)
     print(f"Pitch estimated in {perf_counter() - start:.2f}s.", flush=True)
     f0 = pitch.pitch_hz
     rms = librosa.feature.rms(y=tgt, frame_length=2048, hop_length=320)[0]
@@ -165,22 +171,22 @@ def main(
         jnp.asarray(rms),
         jnp.asarray(1 - pitch.confidence),
         key=jax.random.key(0),
-        sr=sr,
+        sr=opt.SR,
         nf=sim.NF,
     )
 
     networks = (
         ("cnn", "rff", "grid", "multiscale-grid", "mfn")
-        if network == "all" else (network,)
+        if opt.network == "all" else (opt.network,)
     )
     for network_name in networks:
-        run_output = output / network_name if network == "all" else output
+        run_output = opt.output / network_name if opt.network == "all" else opt.output
         spectrogram = None
         match network_name:
             case "cnn":
                 mel = librosa.feature.melspectrogram(
                     y=tgt,
-                    sr=sr,
+                    sr=opt.SR,
                     n_fft=2048,
                     win_length=800,
                     hop_length=200,
@@ -202,50 +208,51 @@ def main(
                 model = RFFMLP(
                     N=sim.N,
                     T=sim.n_windows,
-                    encoding_dim=rff_encoding_dim,
-                    hidden_dim=rff_hidden_dim,
-                    scale=rff_scale,
-                    activation=rff_activation,
+                    encoding_dim=opt.rff_encoding_dim,
+                    hidden_dim=opt.rff_hidden_dim,
+                    scale=opt.rff_scale,
+                    activation=opt.rff_activation,
                     rngs=nnx.Rngs(0),
                 )
             case _:
                 raise ValueError(f"Unknown network: {network_name!r}")
-        print(f"Fitting {network_name} for {n_steps} steps...", flush=True)
+        print(f"Fitting {network_name} for {opt.n_steps} steps...", flush=True)
         pout, A, losses = fit_utterance(
             jnp.asarray(tgt),
             uin,
             sim,
             model,
-            n_steps,
+            opt.n_steps,
             spectrogram=spectrogram,
-            area_bias=area_bias,
-            area_scale=area_scale,
-            L=L,
+            area_bias=opt.area_bias,
+            area_scale=opt.area_scale,
+            L=opt.L,
         )
 
         run_output.mkdir(parents=True, exist_ok=True)
         config = {
             "network": network_name,
-            "path": str(path.resolve()),
-            "n_steps": n_steps,
-            "sample_rate": sr,
-            "duration": len(tgt) / sr,
+            "path": str(opt.path.resolve()),
+            "n_steps": opt.n_steps,
+            "sample_rate": opt.SR,
+            "L": opt.L,
+            "duration": len(tgt) / opt.SR,
             "seed": 0,
-            "area_scale": area_scale,
-            "area_bias": area_bias,
+            "area_scale": opt.area_scale,
+            "area_bias": opt.area_bias,
         }
         if network_name == "rff":
             config.update(
-                fourier_scale=rff_scale,
-                encoding_dim=rff_encoding_dim, hidden_dim=rff_hidden_dim,
+                fourier_scale=opt.rff_scale,
+                encoding_dim=opt.rff_encoding_dim, hidden_dim=opt.rff_hidden_dim,
                 peak_lr=1e-3,
-                activation=rff_activation,
+                activation=opt.rff_activation,
             )
         (run_output / "config.json").write_text(json.dumps(config, indent=2))
         pout = np.asarray(pout)
-        sf.write(run_output / "target.wav", tgt, sr, subtype="FLOAT")
-        sf.write(run_output / "uin.wav", np.asarray(uin), sr, subtype="FLOAT")
-        sf.write(run_output / "fitted.wav", pout / (np.max(np.abs(pout)) + 1e-8), sr)
+        sf.write(run_output / "target.wav", tgt, opt.SR, subtype="FLOAT")
+        sf.write(run_output / "uin.wav", np.asarray(uin), opt.SR, subtype="FLOAT")
+        sf.write(run_output / "fitted.wav", pout / (np.max(np.abs(pout)) + 1e-8), opt.SR)
         np.savez(
             run_output / "fit.npz",
             areas=np.asarray(A),
@@ -260,16 +267,16 @@ def main(
             audio_path=run_output / "fitted.wav",
             target_audio=tgt,
             reconstructed_audio=pout,
-            length_cm=L,
+            length_cm=opt.L,
             hop_seconds=sim.hop_length / sim.SR,
             window_seconds=sim.frame_length / sim.SR,
         )
         print(f"Saved audio, fitted areas, and tube visualizations to {run_output}")
-        if network == "all":
+        if opt.network == "all":
             # Release this model and its compiled programs before the next fit.
             del model, pout, A, losses
             jax.clear_caches()
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(tyro.cli(ReconstructOptions))

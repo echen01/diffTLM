@@ -18,33 +18,33 @@ To sync the environment, run:
 uv sync
 ```
 
-### Fitting an audio sample
+The simulator is implemented in both JAX (`difftlm.jax`) and PyTorch (`difftlm.torch`).
 
-To fit the 
-`assets/jude.wav` recording with different neural field representations, run
+### Fitting an audio sample (JAX)
+
+To fit `assets/jude.wav` with different neural field representations, run:
 
 ```bash
-uv run python -m difftlm.fit_sample --network all --output outputs/jude
+uv run python -m difftlm.jax.fit_sample --network all --output outputs/jude
 ```
 
-The script first estimates the glottal pulse using SwiftF0, then optimizes the tube geometry to match the target audio. 500 training steps are used by default. 
+The script first estimates the glottal pulse using SwiftF0, then optimizes the tube geometry to match the target audio. 500 training steps are used by default.
 
 Choose a representation with `--network`:
 
 | Value | Representation |
 | --- | --- |
-| `cnn` | Convolutional encoder with a multiresolution grid (default). |
+| `cnn` | Convolutional encoder with a multiresolution grid (default) |
 | `rff` | MLP with random Fourier features |
 | `grid` | A single directly optimized grid |
 | `multiscale-grid` | Directly optimized multiresolution grids |
 | `mfn` | Multiplicative Fourier filter network |
 | `all` | Run all five representations sequentially |
 
-
 To fit your own recording, or run a shorter experiment:
 
 ```bash
-uv run python -m difftlm.fit_sample \
+uv run python -m difftlm.jax.fit_sample \
     --path /path/to/audio.wav \
     --network rff \
     --duration 2.0 \
@@ -54,13 +54,43 @@ uv run python -m difftlm.fit_sample \
 
 `--duration` selects the first N seconds; omit it to use the full recording.
 
+### Reconstructing MRI from speech (PyTorch)
+
+Reconstruct a midsagittal MRI video from speech using the pretrained StyleGAN2 checkpoint ([`emc348/usc-span-stylegan2`](https://huggingface.co/emc348/usc-span-stylegan2)):
+
+```bash
+uv run python -m difftlm.torch.reconstruct \
+    --path assets/jude.wav \
+    --subject-id 1 \
+    --output outputs/jude_mri
+```
+
+The checkpoint (`usc-span-stylegan2.safetensors`) is downloaded automatically from Hugging Face Hub on first run and cached locally. You can also place it at `weights/usc-span-stylegan2.safetensors` or pass a local path with `--checkpoint`.
+
+This initializes from the speaker's mean latent and optimizes temporal StyleGAN latents through the differentiable area extractor and PyTorch vocal tract simulator (400 steps by default). The output folder contains `mri.mp4` (with reconstructed audio), `target.wav`, `reconstructed.wav`, `reconstruction.npz`, and `metadata.json`.
+
+Common options (run with `--help` for all options):
+
+| Flag | Description |
+| --- | --- |
+| `--subject-id` | Speaker conditioning ID (1–75; inferred from `subNNN` filenames, otherwise 1) |
+| `--checkpoint` | Local `.safetensors` checkpoint path (downloads from Hugging Face if omitted) |
+| `--start`, `--duration` | Audio interval in seconds (defaults to 3 seconds starting at the detected audio onset) |
+| `--n-steps` | Optimization steps (default: 400) |
+| `--checkpoint-areas` | Recompute frames during backward to reduce GPU memory (pair with e.g. `--batch-size 8`) |
+| `--overlay-areas` | Also save `mri_overlay.mp4` with the extracted airway rays |
+| `--device` | `auto` (default), `cuda`, or `cpu` |
+
+For a quick smoke test, add `--duration 0.2 --n-steps 2 --batch-size 4`. GPU runs compile StyleGAN's CUDA kernels on first use (requiring `nvcc`, a C++ compiler, and `ninja`); CPU runs fall back to PyTorch ops.
+
+The bundled StyleGAN code in `difftlm/ext/stylegan/` retains its original [StyleGAN license](difftlm/ext/stylegan/LICENSE.txt).
+
 ### Tips and Tricks
 Learning rate and area scale are the two most important parameters to scale when fitting a new sample. Optimal learning rates vary significantly depending on the neural field architecture used. 
 
 
 ### To Dos
 - [ ] Upload autoencoder weights and code
-- [ ] Add MRI experiments
 
 
 ### Citation

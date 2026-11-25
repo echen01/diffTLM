@@ -219,5 +219,6 @@ __marimo__/
 
 outputs/
 references/
-tests/
 :memory:.ses
+
+weights/

@@ -11,7 +11,7 @@
 import os
 import numpy as np
 import torch
-from difftlm.torch._stylegan import dnnlib
+from difftlm.ext.stylegan import dnnlib
 
 from .. import custom_ops
 from .. import misc

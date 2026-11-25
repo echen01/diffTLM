@@ -1,19 +1,28 @@
 [project]
-name = "vocal"
+name = "difftlm"
 version = "0.1.0"
-description = "Add your description here"
+description = "Differentiable transmission-line simulation and vocal tract reconstruction from speech"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "auraloss>=0.4.0",
     "flax>=0.12.7",
+    "huggingface-hub>=2.4.0",
     "imageio-ffmpeg>=0.6.0",
     "jax[cuda13]>=0.10.1",
     "librosa>=0.11.0",
     "matplotlib>=3.11.2",
+    "ninja>=1.11.1",
+    "numpy",
     "optax>=0.2.8",
     "orbax>=0.1.9",
+    "packaging>=24.0",
+    "pillow>=10.1",
     "pytest>=9.0.3",
+    "requests>=2.32.0",
+    "safetensors>=0.8.0",
+    "scipy",
+    "soundfile>=0.12",
     "swift-f0>=0.3.0",
     "torch>=2.11.0",
     "torchaudio>=2.11.0",

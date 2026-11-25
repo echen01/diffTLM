@@ -13,12 +13,12 @@ https://github.com/NVlabs/stylegan2/blob/master/training/networks_stylegan2.py""
 
 import numpy as np
 import torch
-from difftlm.torch._stylegan.torch_utils import misc
-from difftlm.torch._stylegan.torch_utils import persistence
-from difftlm.torch._stylegan.torch_utils.ops import conv2d_resample
-from difftlm.torch._stylegan.torch_utils.ops import upfirdn2d
-from difftlm.torch._stylegan.torch_utils.ops import bias_act
-from difftlm.torch._stylegan.torch_utils.ops import fma
+from difftlm.ext.stylegan.torch_utils import misc
+from difftlm.ext.stylegan.torch_utils import persistence
+from difftlm.ext.stylegan.torch_utils.ops import conv2d_resample
+from difftlm.ext.stylegan.torch_utils.ops import upfirdn2d
+from difftlm.ext.stylegan.torch_utils.ops import bias_act
+from difftlm.ext.stylegan.torch_utils.ops import fma
 
 #----------------------------------------------------------------------------
 

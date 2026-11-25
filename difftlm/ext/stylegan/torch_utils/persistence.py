@@ -20,8 +20,8 @@ import inspect
 import copy
 import uuid
 import types
-from difftlm.torch._stylegan import dnnlib
-from difftlm.torch._stylegan import namespace_imports
+from difftlm.ext.stylegan import dnnlib
+from difftlm.ext.stylegan import namespace_imports
 
 #----------------------------------------------------------------------------
 
